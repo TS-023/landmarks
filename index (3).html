@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Europa in 3D — iconische landmarks</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/STLLoader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --bg:oklch(97% 0.002 0);
+  --surface:oklch(99% 0.001 0);
+  --text:oklch(15% 0.002 0);
+  --muted:oklch(48% 0.004 0);
+  --border:oklch(87% 0.004 0);
+  --accent:oklch(18% 0.002 0);
+  --accent-dark:oklch(4% 0 0);
+  --accent2:oklch(58% 0.005 0);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;font-family:'Space Grotesk',sans-serif;color:var(--text);background:var(--bg);}
+#map{position:absolute;inset:0;z-index:0;}
+#map .leaflet-tile-pane{filter:grayscale(1) brightness(1.06) contrast(1.08);}
+.leaflet-control-zoom{margin-top:74px!important;margin-right:20px!important;}
+.topbar{position:absolute;top:20px;left:20px;z-index:500;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 22px;max-width:340px;box-shadow:0 8px 24px rgba(60,40,20,0.08);}
+.topbar h1{font-family:'Space Grotesk',sans-serif;font-size:22px;margin:0 0 4px;font-weight:700;letter-spacing:-.01em;}
+.topbar p{margin:0 0 12px;font-size:13.5px;color:var(--muted);line-height:1.5;}
+.legend{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--muted);}
+.legend-item{display:flex;align-items:center;gap:8px;}
+.legend-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
+.legend-dot.ready{background:var(--accent);}
+.legend-dot.soon{background:transparent;border:2px solid var(--accent2);}
+
+.pin{display:flex;flex-direction:column;align-items:center;cursor:pointer;transition:transform .15s;}
+.pin:hover{transform:translateY(-2px);}
+.pin-badge{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--accent);box-shadow:0 2px 8px rgba(20,20,20,.3);}
+.pin-badge svg{width:18px;height:18px;color:oklch(99% 0.001 0);}
+.pin-photo{width:56px;height:56px;border-radius:50%;background-size:cover;background-position:center;border:2px solid var(--surface);box-shadow:0 3px 10px rgba(20,20,20,.35);}
+.pin-label{margin-top:4px;font-size:11px;font-weight:600;background:var(--surface);padding:3px 8px;border-radius:6px;box-shadow:0 1px 4px rgba(20,35,45,.15);white-space:nowrap;color:var(--text);border:1px solid var(--border);}
+.leaflet-tooltip{font-family:'Space Grotesk',sans-serif;font-size:12.5px;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.1);}
+
+#panel{position:absolute;top:0;right:0;height:100%;width:400px;max-width:92vw;background:var(--surface);border-left:1px solid var(--border);box-shadow:-12px 0 30px rgba(40,25,10,.12);transform:translateX(100%);transition:transform .35s cubic-bezier(.2,.7,.2,1);z-index:800;overflow-y:auto;}
+#panel.open{transform:translateX(0);}
+#panel .inner{padding:26px;}
+#panel .close{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:var(--surface);font-size:16px;line-height:1;cursor:pointer;color:var(--muted);}
+#panel .close:hover{background:var(--bg);}
+#panel .country{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent2);font-weight:600;margin-bottom:6px;}
+#panel h2{font-family:'Space Grotesk',sans-serif;font-size:26px;margin:0 0 12px;line-height:1.2;font-weight:700;letter-spacing:-.01em;}
+#panel .desc{font-size:14.5px;line-height:1.6;color:var(--muted);margin-bottom:20px;}
+
+.stage-wrap{background:linear-gradient(180deg, oklch(93% 0.02 60), oklch(88% 0.025 55));border:1px solid var(--border);border-radius:12px;height:280px;position:relative;overflow:hidden;margin-bottom:16px;cursor:grab;}
+.stage-wrap.dragging{cursor:grabbing;}
+.stage{position:absolute;inset:0;perspective:900px;}
+.rig{position:absolute;left:50%;top:62%;transform-style:preserve-3d;}
+.hint{position:absolute;bottom:8px;left:0;right:0;text-align:center;font-size:11px;color:var(--muted);letter-spacing:.03em;pointer-events:none;}
+
+.soon-box{border:1px dashed var(--border);border-radius:12px;height:180px;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;margin-bottom:16px;color:var(--muted);font-size:13.5px;line-height:1.5;background:repeating-linear-gradient(135deg, oklch(94% 0.01 60) 0 10px, oklch(96% 0.01 60) 10px 20px);}
+
+.cta{display:block;width:100%;text-align:center;background:var(--accent);color:oklch(98% 0.01 60);text-decoration:none;font-weight:600;font-size:14.5px;padding:13px 16px;border-radius:9px;transition:background .15s;}
+.cta:hover{background:var(--accent-dark);}
+.cta-note{font-size:11.5px;color:var(--muted);text-align:center;margin-top:8px;}
+
+#map.zoomed-out .pin-label{display:none;}
+#map.zoomed-out .pin-badge{transform:scale(.65);}
+#map.zoomed-out .pin-photo{transform:scale(.55);}
+#map.zoomed-out .dot-mark{width:8px;height:8px;margin-top:0;}
+#map.zoomed-out .pin{gap:0;}
+
+.admin-fab{position:absolute;bottom:20px;left:20px;z-index:500;background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:9px 18px;font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 8px 24px rgba(60,40,20,0.08);color:var(--text);font-family:'Work Sans',sans-serif;}
+.admin-overlay{position:absolute;inset:0;background:rgba(30,22,15,.45);z-index:1000;display:none;align-items:center;justify-content:center;}
+.admin-box{position:relative;background:var(--surface);width:520px;max-width:92vw;max-height:82vh;overflow-y:auto;border-radius:14px;padding:28px;box-shadow:0 20px 50px rgba(20,15,10,.3);}
+.admin-box h3{font-family:'Space Grotesk',sans-serif;font-size:20px;margin:0 0 16px;font-weight:700;}
+.admin-box input[type=password]{width:100%;padding:11px 13px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin-bottom:12px;font-family:inherit;}
+.admin-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px;}
+.admin-row-name{flex:1;font-weight:600;}
+.admin-row-status{color:var(--muted);font-size:11.5px;width:100px;flex-shrink:0;}
+.admin-btn{border:1px solid var(--border);background:var(--surface);border-radius:7px;padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;}
+.admin-btn:hover{background:var(--bg);}
+.admin-btn-danger{color:oklch(50% 0.15 25);border-color:oklch(80% 0.08 25);}
+.admin-logout{font-size:12px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;margin-bottom:14px;padding:0;}
+.admin-row{border-bottom:none;padding:0;}
+.admin-row-wrap{border-bottom:1px solid var(--border);padding:9px 0;}
+.admin-edit-form{display:none;margin-top:10px;padding:12px;background:var(--bg);border-radius:8px;}
+.admin-edit-form.open{display:block;}
+.admin-field-row{display:flex;gap:10px;margin-bottom:8px;}
+.admin-field-row label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;}
+.admin-field-row input[type=number]{width:100%;padding:7px 9px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;}
+.admin-img-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:8px;}
+.admin-img-grid input{width:100%;padding:6px 7px;border:1px solid var(--border);border-radius:6px;font-size:10.5px;font-family:inherit;}
+.admin-section-label{font-size:11px;font-weight:600;color:var(--muted);margin:8px 0 4px;text-transform:uppercase;letter-spacing:.03em;}
+.img-slot{position:relative;aspect-ratio:1;}
+.img-slot-preview{width:100%;height:100%;border:1px dashed var(--border);border-radius:6px;background-size:cover;background-position:center;background-color:var(--bg);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);cursor:pointer;}
+.img-slot-remove{position:absolute;top:-6px;right:-6px;width:16px;height:16px;border-radius:50%;background:var(--surface);border:1px solid var(--border);font-size:9px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;color:var(--muted);}
+
+.shop-tabs{display:flex;gap:6px;margin:22px 0 14px;border-bottom:1px solid var(--border);}
+.shop-tab{flex:1;text-align:center;padding:10px 0;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;}
+.shop-tab.active{color:var(--text);border-bottom-color:var(--accent);}
+.option-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 0;border-bottom:1px solid var(--border);}
+.option-add-btn{flex-shrink:0;background:var(--accent);color:oklch(99% 0.001 0);border:none;font-weight:600;font-size:13px;padding:10px 18px;border-radius:8px;cursor:pointer;transition:background .15s;}
+.option-add-btn:hover{background:var(--accent-dark);}
+.price-row{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;}
+.price-label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+.price-value{font-family:'Space Grotesk',sans-serif;font-size:24px;font-weight:700;letter-spacing:-.01em;}
+
+.gallery{position:relative;margin-bottom:16px;}
+.gallery-track{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;border-radius:10px;scrollbar-width:none;}
+.gallery-track::-webkit-scrollbar{display:none;}
+.gallery-slide{flex:0 0 100%;scroll-snap-align:start;height:170px;display:flex;align-items:center;justify-content:center;background:repeating-linear-gradient(135deg, oklch(94% 0.01 60) 0 10px, oklch(96% 0.01 60) 10px 20px);border:1px solid var(--border);font-family:monospace;font-size:12px;color:var(--muted);}
+.gallery-slide img{width:100%;height:100%;object-fit:cover;}
+.gallery-nav{position:absolute;top:50%;transform:translateY(-50%);width:28px;height:28px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;box-shadow:0 2px 6px rgba(20,35,45,.2);user-select:none;}
+.gallery-prev{left:6px;} .gallery-next{right:6px;}
+.gallery-dots{display:flex;justify-content:center;gap:5px;margin-top:8px;}
+.gallery-dot{width:6px;height:6px;border-radius:50%;background:var(--border);}
+.gallery-dot.active{background:var(--accent);}
+
+.cart-fab{position:absolute;top:20px;right:20px;z-index:900;width:46px;height:46px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 8px 24px rgba(60,40,20,0.08);}
+.cart-fab svg{width:20px;height:20px;color:var(--text);}
+.cart-badge{position:absolute;top:-4px;right:-4px;background:var(--accent);color:oklch(99% 0.01 60);font-size:10.5px;font-weight:700;border-radius:50%;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;padding:0 4px;}
+.cart-overlay{position:absolute;inset:0;background:rgba(30,22,15,.45);z-index:1000;display:none;align-items:center;justify-content:center;}
+.cart-box{position:relative;background:var(--surface);width:440px;max-width:92vw;max-height:82vh;overflow-y:auto;border-radius:14px;padding:28px;box-shadow:0 20px 50px rgba(20,15,10,.3);}
+.cart-box h3{font-family:'Space Grotesk',sans-serif;font-size:20px;margin:0 0 16px;font-weight:700;}
+.cart-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);font-size:13.5px;}
+.cart-item-name{flex:1;font-weight:600;}
+.cart-item-name small{display:block;font-weight:400;color:var(--muted);font-size:11.5px;}
+.qty-ctrl{display:flex;align-items:center;gap:6px;}
+.qty-btn{width:22px;height:22px;border-radius:6px;border:1px solid var(--border);background:var(--surface);cursor:pointer;font-size:13px;line-height:1;}
+.cart-item-price{width:64px;text-align:right;font-weight:600;flex-shrink:0;}
+.cart-total{display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding:14px 0;border-top:1px solid var(--border);margin:6px 0 16px;}
+.cart-empty{color:var(--muted);font-size:13.5px;text-align:center;padding:24px 0;}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="topbar">
+  <h1>Europa in 3D</h1>
+  <p>Scroll om in of uit te zoomen. Klik op een landmark voor prijzen, foto’s en een 3D-weergave.</p>
+</div>
+
+<aside id="panel">
+  <div class="inner">
+    <button class="close" id="panelClose">✕</button>
+    <div class="country" id="pCountry"></div>
+    <h2 id="pTitle"></h2>
+    <p class="desc" id="pDesc"></p>
+    <div id="pBody"></div>
+  </div>
+</aside>
+
+<button class="admin-fab" id="adminBtn">Beheer · STL-bestanden</button>
+<div class="admin-overlay" id="adminOverlay">
+  <div class="admin-box">
+    <button class="close" id="adminClose">✕</button>
+    <div id="adminLogin">
+      <h3>Beheerder inloggen</h3>
+      <input type="email" id="adminEmail" placeholder="E-mailadres" autocomplete="username">
+      <input type="password" id="adminPass" placeholder="Wachtwoord" autocomplete="current-password">
+      <button class="cta" id="adminLoginBtn">Inloggen</button>
+      <div class="cta-note">Log in met het beheerdersaccount dat je in Supabase Auth hebt aangemaakt.</div>
+    </div>
+    <div id="adminManage" style="display:none;">
+      <h3>STL-bestanden beheren</h3>
+      <button class="admin-logout" id="adminLogout">Uitloggen</button>
+      <div id="adminList"></div>
+    </div>
+  </div>
+</div>
+
+<button class="cart-fab" id="cartBtn">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 12.4a2 2 0 002 1.6h8.2a2 2 0 002-1.6L21 8H6"/><circle cx="9" cy="20" r="1.4" fill="currentColor" stroke="none"/><circle cx="17" cy="20" r="1.4" fill="currentColor" stroke="none"/></svg>
+  <span class="cart-badge" id="cartBadge" style="display:none;">0</span>
+</button>
+<div class="cart-overlay" id="cartOverlay">
+  <div class="cart-box">
+    <button class="close" id="cartClose">✕</button>
+    <h3>Winkelwagen</h3>
+    <div id="cartItems"></div>
+    <div class="cart-total" id="cartTotal"></div>
+    <button class="cta" id="checkoutBtn">Naar afrekenen →</button>
+  </div>
+</div>
+<div class="cart-overlay" id="checkoutOverlay">
+  <div class="cart-box">
+    <button class="close" id="checkoutClose">✕</button>
+    <h3>Afrekenen</h3>
+    <div id="checkoutSummary"></div>
+    <div class="checkout-fields" style="margin:14px 0;">
+      <input type="text" id="custName" placeholder="Naam" style="width:100%;margin-bottom:8px;padding:10px;border:1px solid var(--border);border-radius:8px;">
+      <input type="email" id="custEmail" placeholder="E-mailadres" style="width:100%;margin-bottom:8px;padding:10px;border:1px solid var(--border);border-radius:8px;">
+      <div id="shippingFields" style="display:none;">
+        <input type="text" id="custAddress" placeholder="Straat + huisnummer" style="width:100%;margin-bottom:8px;padding:10px;border:1px solid var(--border);border-radius:8px;">
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="custZip" placeholder="Postcode" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:8px;">
+          <input type="text" id="custCity" placeholder="Plaats" style="flex:2;padding:10px;border:1px solid var(--border);border-radius:8px;">
+        </div>
+        <div class="cta-note" style="margin-top:6px;">Nodig voor verzending van je 3D-kunstobject.</div>
+      </div>
+    </div>
+    <div id="checkoutError" class="cta-note" style="color:#b3432b;display:none;"></div>
+    <button class="cta" id="placeOrderBtn">Doorgaan naar betalen (iDEAL) →</button>
+  </div>
+</div>
+<div class="cart-overlay" id="orderStatusOverlay">
+  <div class="cart-box">
+    <button class="close" id="orderStatusClose">✕</button>
+    <h3>Je bestelling</h3>
+    <div id="orderStatusBody"></div>
+  </div>
+</div>
+
+<script>
+const LANDMARKS = [
+  {name:"Colosseum", icon:"arena", country:"Italië", lat:41.8902, lng:12.4922, desc:"Amfitheater uit het jaar 80 na Chr., het grootste dat ooit door de Romeinen werd gebouwd.", model:"colosseum"},
+  {name:"Toren van Pisa", icon:"tower", country:"Italië", lat:43.7230, lng:10.3966, desc:"Vrijstaande klokkentoren uit 1372, bekend om zijn scheve fundering.", model:"pisa"},
+  {name:"Pantheon", icon:"dome", country:"Italië", lat:41.8986, lng:12.4769, desc:"Voormalige Romeinse tempel uit 113-125 na Chr., met de grootste ongewapende betonnen koepel ter wereld."},
+  {name:"Eiffeltoren", icon:"tower", country:"Frankrijk", lat:48.8584, lng:2.2945, desc:"IJzeren traliewerktoren uit 1889, gebouwd voor de wereldexpositie in Parijs.", model:"eiffel"},
+  {name:"Notre-Dame", icon:"dome", country:"Frankrijk", lat:48.8530, lng:2.3499, desc:"Gotische kathedraal op het Île de la Cité, gebouwd tussen 1163 en 1345."},
+  {name:"Arc de Triomphe", icon:"arch", country:"Frankrijk", lat:48.8738, lng:2.2950, desc:"Triomfboog uit 1836 ter herdenking van de Franse militaire overwinningen."},
+  {name:"Sagrada Família", icon:"dome", country:"Spanje", lat:41.4036, lng:2.1744, desc:"Basiliek van Antoni Gaudí, in aanbouw sinds 1882 en nog altijd niet voltooid.", model:"sagrada"},
+  {name:"Alhambra", icon:"castle", country:"Spanje", lat:37.1760, lng:-3.5881, desc:"Moors paleis- en vestingcomplex in Granada, gebouwd vanaf de 9e eeuw."},
+  {name:"Mezquita van Córdoba", icon:"dome", country:"Spanje", lat:37.8790, lng:-4.7794, desc:"Voormalige moskee, nu kathedraal, gebouwd vanaf 785 na Chr."},
+  {name:"Big Ben & Palace of Westminster", icon:"tower", country:"Verenigd Koninkrijk", lat:51.5007, lng:-0.1246, desc:"Klokkentoren en parlementsgebouw aan de Thames, herbouwd in neogotische stijl na 1834.", model:"bigben"},
+  {name:"Tower Bridge", icon:"bridge", country:"Verenigd Koninkrijk", lat:51.5055, lng:-0.0754, desc:"Ophaalbrug over de Thames uit 1894, met twee gotische torens."},
+  {name:"Stonehenge", icon:"megalith", country:"Verenigd Koninkrijk", lat:51.1789, lng:-1.8262, desc:"Prehistorische steencirkel, opgericht tussen 3000 en 2000 v.Chr."},
+  {name:"Brandenburger Tor", icon:"arch", country:"Duitsland", lat:52.5163, lng:13.3777, desc:"Classicistische stadspoort uit 1791, symbool van de Duitse eenwording.", model:"brandenburg"},
+  {name:"Dom van Keulen", icon:"dome", country:"Duitsland", lat:50.9413, lng:6.9583, desc:"Gotische kathedraal, gebouwd tussen 1248 en 1880, met de hoogste torens van een kerk in Europa."},
+  {name:"Slot Neuschwanstein", icon:"castle", country:"Duitsland", lat:47.5576, lng:10.7498, desc:"Sprookjeskasteel van koning Lodewijk II van Beieren, gebouwd vanaf 1869."},
+  {name:"Rijksmuseum", icon:"dome", country:"Nederland", lat:52.3600, lng:4.8852, desc:"Nationaal museum in Amsterdam, geopend in 1885, ontworpen door Pierre Cuypers."},
+  {name:"Domtoren", icon:"tower", country:"Nederland", lat:52.0908, lng:5.1214, desc:"Kerktoren in Utrecht uit de 14e eeuw, de hoogste kerktoren van Nederland."},
+  {name:"Vredespaleis", icon:"dome", country:"Nederland", lat:52.0851, lng:4.2954, desc:"Zetel van het Internationaal Gerechtshof in Den Haag, geopend in 1913."},
+  {name:"Atomium", icon:"atomium", country:"België", lat:50.8949, lng:4.3415, desc:"Bouwwerk uit 1958 in de vorm van een vergroot ijzerkristal, gebouwd voor Expo 58.", model:"atomium"},
+  {name:"Grote Markt", icon:"tower", country:"België", lat:50.8467, lng:4.3525, desc:"Middeleeuws marktplein in Brussel, omringd door gildehuizen en het stadhuis."},
+  {name:"Belfort van Brugge", icon:"tower", country:"België", lat:51.2085, lng:3.2247, desc:"Middeleeuwse klokkentoren uit de 13e eeuw, symbool van de stedelijke onafhankelijkheid."},
+  {name:"Parthenon", icon:"temple", country:"Griekenland", lat:37.9715, lng:23.7267, desc:"Tempel voor Athena op de Akropolis, gebouwd tussen 447 en 432 v.Chr.", model:"parthenon"},
+  {name:"Meteora-kloosters", icon:"castle", country:"Griekenland", lat:39.7217, lng:21.6306, desc:"Orthodoxe kloosters op rotspilaren, gesticht vanaf de 14e eeuw."},
+  {name:"Tempel van Poseidon", icon:"temple", country:"Griekenland", lat:37.6503, lng:24.0244, desc:"Tempel op Kaap Sounion uit 444 v.Chr., met uitzicht over de Egeïsche Zee."},
+  {name:"Schloss Schönbrunn", icon:"castle", country:"Oostenrijk", lat:48.1858, lng:16.3122, desc:"Barok zomerpaleis van de Habsburgers in Wenen, voltooid in 1780."},
+  {name:"Stephansdom", icon:"dome", country:"Oostenrijk", lat:48.2082, lng:16.3738, desc:"Gotische kathedraal in het hart van Wenen, met een 137 meter hoge zuidertoren."},
+  {name:"Abdij van Melk", icon:"dome", country:"Oostenrijk", lat:48.2277, lng:15.3311, desc:"Benedictijnenklooster hoog boven de Donau, herbouwd in barokstijl vanaf 1702."},
+  {name:"Toren van Belém", icon:"tower", country:"Portugal", lat:38.6916, lng:-9.2160, desc:"Verdedigingstoren uit 1519 aan de Taag, in Manuelijnse stijl."},
+  {name:"Mosteiro dos Jerónimos", icon:"dome", country:"Portugal", lat:38.6979, lng:-9.2062, desc:"Kloosterkerk uit 1501, gebouwd ter ere van Vasco da Gama's ontdekkingsreis."},
+  {name:"Paleis van Pena", icon:"castle", country:"Portugal", lat:38.7876, lng:-9.3905, desc:"Romantisch paleis op een heuveltop in Sintra, voltooid in 1854."},
+];
+
+/* ---------- supabase ---------- */
+const SUPABASE_URL = 'https://kphwbtmvzhcvufdweoez.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_bvvW_lIKEXDG9KxiT67cSw_XHYbCX-c';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const STL_BUCKET = 'landmarks-stl';
+const PHOTO_BUCKET = 'landmarks-photos';
+
+const map = L.map('map', {scrollWheelZoom:true, zoomControl:false}).setView([49.5, 10], 4);
+setTimeout(()=>map.invalidateSize(), 100);
+new ResizeObserver(()=>map.invalidateSize()).observe(document.getElementById('map'));
+L.control.zoom({position:'topright'}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO', subdomains:'abcd', maxZoom:18, minZoom:3
+}).addTo(map);
+
+/* ---------- panel ---------- */
+const panel = document.getElementById('panel');
+document.getElementById('panelClose').onclick = () => { panel.classList.remove('open'); disposeViewer(); };
+
+function slugify(s){ return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,''); }
+/* STL-bestanden nu in een gedeelde Supabase Storage bucket i.p.v. lokale IndexedDB,
+   zodat elke bezoeker dezelfde geüploade bestanden ziet. */
+async function idbSet(key, file){
+  const { error } = await sb.storage.from(STL_BUCKET).upload(key+'.stl', file, { upsert:true, contentType:'model/stl' });
+  if(error){ alert('Uploaden van STL is mislukt: '+error.message); throw error; }
+}
+async function idbGet(key){
+  const { data, error } = await sb.storage.from(STL_BUCKET).download(key+'.stl');
+  if(error || !data) return null;
+  return data;
+}
+async function idbDelete(key){
+  const { error } = await sb.storage.from(STL_BUCKET).remove([key+'.stl']);
+  if(error){ alert('Verwijderen van STL is mislukt: '+error.message); throw error; }
+}
+function downloadBlob(blob,filename){ const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(url),2000); }
+
+/* ---------- products & cart ---------- */
+/* Prijzen en foto's staan nu in een gedeelde Supabase-tabel ('products') i.p.v. localStorage,
+   zodat wijzigingen van de beheerder voor alle bezoekers zichtbaar zijn.
+   productsCache houdt een lokale kopie bij zodat de synchrone UI-code (die overal getProduct()
+   aanroept) niet hoeft te wachten op elk databaseverzoek. */
+let productsCache = {};
+const productsReady = (async () => {
+  const { data, error } = await sb.from('products').select('*');
+  if(error){ console.error('Kon producten niet laden:', error.message); return; }
+  (data||[]).forEach(row => {
+    productsCache[row.slug] = {
+      stlPrice: row.stl_price,
+      artPrice: row.art_price,
+      images: row.images || [],
+    };
+  });
+})();
+function getProduct(slug){
+  const p = productsCache[slug] || {};
+  let images = p.images;
+  if(!images || !images.length){
+    images = [0,1,2,3,4].map(()=>'');
+  }
+  return {
+    stlPrice: p.stlPrice ?? 34.95,
+    artPrice: p.artPrice ?? 54.95,
+    images,
+  };
+}
+async function setProduct(slug, patch){
+  const updated = Object.assign(getProduct(slug), patch);
+  productsCache[slug] = updated;
+  const { error } = await sb.from('products').upsert({
+    slug,
+    stl_price: updated.stlPrice,
+    art_price: updated.artPrice,
+    images: updated.images,
+  });
+  if(error){ alert('Opslaan is mislukt: '+error.message); throw error; }
+}
+function fmtPrice(n){ return '€ ' + n.toFixed(2).replace('.',','); }
+
+function loadCart(){ try{ return JSON.parse(localStorage.getItem('lm_cart')||'[]'); }catch(e){ return []; } }
+function saveCart(arr){ localStorage.setItem('lm_cart', JSON.stringify(arr)); updateCartBadge(); }
+function addToCart(lm, category){
+  const slug = slugKey(lm);
+  const prod = getProduct(slug);
+  const price = category==='stl' ? prod.stlPrice : prod.artPrice;
+  const cart = loadCart();
+  const existing = cart.find(i=>i.slug===slug && i.category===category);
+  if(existing) existing.qty++; else cart.push({slug, name:lm.name, category, price, qty:1});
+  saveCart(cart);
+}
+function updateCartBadge(){
+  const n = loadCart().reduce((s,i)=>s+i.qty,0);
+  const badge = document.getElementById('cartBadge');
+  badge.textContent = n; badge.style.display = n>0 ? 'flex' : 'none';
+}
+
+function buildGallery(images, label){
+  const wrap = document.createElement('div'); wrap.className='gallery';
+  const track = document.createElement('div'); track.className='gallery-track';
+  images.forEach((url,i)=>{
+    const slide = document.createElement('div'); slide.className='gallery-slide';
+    if(url){ const img=document.createElement('img'); img.src=url; img.alt=label+' foto '+(i+1); slide.appendChild(img); }
+    else { slide.textContent = label+' foto '+(i+1)+'/5'; }
+    track.appendChild(slide);
+  });
+  const prev = document.createElement('div'); prev.className='gallery-nav gallery-prev'; prev.textContent='‹';
+  const next = document.createElement('div'); next.className='gallery-nav gallery-next'; next.textContent='›';
+  const dots = document.createElement('div'); dots.className='gallery-dots';
+  images.forEach((_,i)=>{ const d=document.createElement('div'); d.className='gallery-dot'+(i===0?' active':''); dots.appendChild(d); });
+  function goTo(i){ track.scrollTo({left: i*track.clientWidth, behavior:'smooth'}); }
+  prev.onclick = ()=>{ const i=Math.max(0,Math.round(track.scrollLeft/track.clientWidth)-1); goTo(i); };
+  next.onclick = ()=>{ const i=Math.min(images.length-1,Math.round(track.scrollLeft/track.clientWidth)+1); goTo(i); };
+  track.addEventListener('scroll', ()=>{
+    const i = Math.round(track.scrollLeft/(track.clientWidth||1));
+    dots.querySelectorAll('.gallery-dot').forEach((d,idx)=>d.classList.toggle('active', idx===i));
+  });
+  wrap.append(track, prev, next, dots);
+  return wrap;
+}
+
+function buildImgSlot(value, index, inputClass, key){
+  const slot = document.createElement('div'); slot.className='img-slot';
+  const preview = document.createElement('div'); preview.className='img-slot-preview';
+  if(value){ preview.style.backgroundImage = 'url('+value+')'; } else { preview.textContent = index===0 ? 'icoon' : String(index+1); }
+  if(index===0) slot.title = 'Deze foto wordt gebruikt als icoon op de kaart';
+  const fileInput = document.createElement('input'); fileInput.type='file'; fileInput.accept='image/*'; fileInput.style.display='none';
+  const textInput = document.createElement('input'); textInput.type='hidden'; textInput.className=inputClass; textInput.value=value||'';
+  async function persist(newVal){
+    const prod = getProduct(key);
+    const arr = prod.images.slice();
+    arr[index] = newVal;
+    await setProduct(key, {images:arr});
+  }
+  preview.onclick = () => fileInput.click();
+  fileInput.onchange = () => {
+    const f = fileInput.files[0]; if(!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const maxW = 900;
+        const scale = Math.min(1, maxW/img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width*scale); canvas.height = Math.round(img.height*scale);
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        canvas.toBlob(async (blob) => {
+          const path = key+'-'+index+'.jpg';
+          const { error: upErr } = await sb.storage.from(PHOTO_BUCKET).upload(path, blob, { upsert:true, contentType:'image/jpeg' });
+          if(upErr){ alert('Uploaden van foto is mislukt: '+upErr.message); return; }
+          const { data: pub } = sb.storage.from(PHOTO_BUCKET).getPublicUrl(path);
+          const url = pub.publicUrl + '?t=' + Date.now(); // cache-buster zodat vervangen foto's direct verversen
+          textInput.value = url; preview.style.backgroundImage = 'url('+url+')'; preview.textContent='';
+          try { await persist(url); preview.title='Opgeslagen'; }
+          catch(e){ alert('Opslaan van deze foto is mislukt.'); }
+        }, 'image/jpeg', 0.82);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(f);
+  };
+  const removeBtn = document.createElement('button'); removeBtn.type='button'; removeBtn.className='img-slot-remove'; removeBtn.textContent='✕';
+  removeBtn.onclick = async (e) => { e.stopPropagation(); textInput.value=''; preview.style.backgroundImage=''; preview.textContent = index===0 ? 'icoon' : String(index+1); await persist(''); };
+  slot.append(preview, fileInput, textInput, removeBtn);
+  return slot;
+}
+
+function renderShopSection(container, lm){
+  const key = slugKey(lm);
+  const prod = getProduct(key);
+  container.appendChild(buildGallery(prod.images.slice(1), 'Foto'));
+  const options = [
+    {label:'STL-bestand', price:prod.stlPrice, category:'stl'},
+    {label:'3D-kunstobject', price:prod.artPrice, category:'art'},
+  ];
+  options.forEach(opt => {
+    const row = document.createElement('div'); row.className='option-row';
+    const info = document.createElement('div');
+    info.innerHTML = '<div class="price-label">'+opt.label+'</div><div class="price-value">'+fmtPrice(opt.price)+'</div>';
+    const btn = document.createElement('button'); btn.className='option-add-btn'; btn.textContent='Toevoegen';
+    btn.onclick = () => { addToCart(lm, opt.category); btn.textContent='Toegevoegd ✓'; setTimeout(()=>{ btn.textContent='Toevoegen'; },1200); };
+    row.append(info, btn);
+    container.appendChild(row);
+  });
+}
+
+let currentViewer = null;
+function disposeViewer(){
+  if(currentViewer){
+    cancelAnimationFrame(currentViewer.animId);
+    currentViewer.controls.dispose();
+    currentViewer.geometry.dispose(); currentViewer.material.dispose();
+    currentViewer.renderer.dispose();
+    currentViewer = null;
+  }
+}
+async function initSTLStage(wrap, blob){
+  disposeViewer();
+  const stageEl = wrap.querySelector('.stage');
+  stageEl.innerHTML = '';
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(45, w/h, 0.1, 5000);
+  camera.position.set(1.7,1.3,1.9);
+  const renderer = new THREE.WebGLRenderer({antialias:true, alpha:true});
+  renderer.setSize(w,h); renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  stageEl.appendChild(renderer.domElement);
+  scene.add(new THREE.HemisphereLight(0xfff2e0, 0x554433, 1.15));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.1); dir.position.set(2,4,3); scene.add(dir);
+  const loader = new THREE.STLLoader();
+  const buf = await blob.arrayBuffer();
+  const geometry = loader.parse(buf);
+  geometry.computeVertexNormals(); geometry.center();
+  geometry.computeBoundingSphere();
+  const r = geometry.boundingSphere.radius || 1;
+  const material = new THREE.MeshStandardMaterial({color:0xC9A876, roughness:.65, metalness:.05});
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.scale.setScalar(1/r); mesh.rotation.x = -Math.PI/2;
+  scene.add(mesh);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  currentViewer = {renderer, geometry, material, controls, animId:0};
+  function animate(){
+    controls.update(); renderer.render(scene,camera);
+    currentViewer.animId = requestAnimationFrame(animate);
+  }
+  animate();
+}
+
+function slugKey(lm){ return slugify(lm.name); }
+
+async function openPanel(lm){
+  disposeViewer();
+  await productsReady;
+  document.getElementById('pCountry').textContent = lm.country;
+  document.getElementById('pTitle').textContent = lm.name;
+  document.getElementById('pDesc').textContent = lm.desc;
+  const body = document.getElementById('pBody');
+  body.innerHTML = '';
+  panel.classList.add('open');
+  const stlBlob = await idbGet(slugKey(lm));
+  if(stlBlob){
+    const wrap = document.createElement('div');
+    wrap.className = 'stage-wrap';
+    wrap.innerHTML = `<div class="stage"></div><div class="hint">sleep om te draaien &middot; scroll om te zoomen</div>`;
+    body.appendChild(wrap);
+    initSTLStage(wrap, stlBlob);
+  } else if(lm.model && BUILDERS[lm.model]){
+    const wrap = document.createElement('div');
+    wrap.className = 'stage-wrap';
+    wrap.innerHTML = `<div class="stage"><div class="rig"></div></div><div class="hint">sleep om te draaien</div>`;
+    body.appendChild(wrap);
+    const cta = document.createElement('a');
+    cta.className = 'cta'; cta.href = '#'; cta.textContent = 'Bestel als STL of 3D-print →';
+    body.appendChild(cta);
+    const note = document.createElement('div');
+    note.className = 'cta-note'; note.textContent = 'Nog geen STL geüpload — dit is een schetsmatige preview';
+    body.appendChild(note);
+    initStage(wrap, BUILDERS[lm.model]);
+  } else {
+    const soon = document.createElement('div');
+    soon.className = 'soon-box';
+    soon.textContent = '3D-model van dit landmark volgt binnenkort.';
+    body.appendChild(soon);
+  }
+  const shop = document.createElement('div'); shop.className='shop-section';
+  body.appendChild(shop);
+  renderShopSection(shop, lm);
+}
+
+/* ---------- cart & checkout ---------- */
+const cartOverlay = document.getElementById('cartOverlay');
+const checkoutOverlay = document.getElementById('checkoutOverlay');
+document.getElementById('cartBtn').onclick = () => { renderCart(); cartOverlay.style.display='flex'; };
+document.getElementById('cartClose').onclick = () => cartOverlay.style.display='none';
+document.getElementById('checkoutClose').onclick = () => checkoutOverlay.style.display='none';
+function renderCart(){
+  const cart = loadCart();
+  const itemsEl = document.getElementById('cartItems');
+  itemsEl.innerHTML = cart.length===0 ? '<div class="cart-empty">Je winkelwagen is leeg.</div>' : '';
+  let total = 0;
+  cart.forEach((item,idx) => {
+    total += item.price * item.qty;
+    const row = document.createElement('div'); row.className='cart-item';
+    const nameEl = document.createElement('div'); nameEl.className='cart-item-name';
+    nameEl.innerHTML = item.name + '<small>' + (item.category==='stl'?'STL-bestand':'3D-kunstobject') + '</small>';
+    const qtyCtrl = document.createElement('div'); qtyCtrl.className='qty-ctrl';
+    const minus = document.createElement('button'); minus.className='qty-btn'; minus.textContent='−';
+    const qtyLabel = document.createElement('span'); qtyLabel.textContent = item.qty;
+    const plus = document.createElement('button'); plus.className='qty-btn'; plus.textContent='+';
+    minus.onclick = () => { item.qty--; const c=loadCart(); if(item.qty<=0) c.splice(idx,1); else c[idx].qty=item.qty; saveCart(c); renderCart(); };
+    plus.onclick = () => { const c=loadCart(); c[idx].qty++; saveCart(c); renderCart(); };
+    qtyCtrl.append(minus, qtyLabel, plus);
+    const priceEl = document.createElement('div'); priceEl.className='cart-item-price'; priceEl.textContent = fmtPrice(item.price*item.qty);
+    row.append(nameEl, qtyCtrl, priceEl);
+    itemsEl.appendChild(row);
+  });
+  document.getElementById('cartTotal').innerHTML = '<span>Totaal</span><span>'+fmtPrice(total)+'</span>';
+  document.getElementById('checkoutBtn').style.display = cart.length ? 'block' : 'none';
+}
+let lastOrderCart = [];
+document.getElementById('checkoutBtn').onclick = () => {
+  const cart = loadCart();
+  lastOrderCart = cart.map(i=>({...i}));
+  const summary = document.getElementById('checkoutSummary');
+  let total = 0;
+  summary.innerHTML = cart.map(i => { total += i.price*i.qty; return '<div class="cart-item"><div class="cart-item-name">'+i.name+' × '+i.qty+'<small>'+(i.category==='stl'?'STL-bestand':'3D-kunstobject')+'</small></div><div class="cart-item-price">'+fmtPrice(i.price*i.qty)+'</div></div>'; }).join('');
+  summary.innerHTML += '<div class="cart-total"><span>Totaal</span><span>'+fmtPrice(total)+'</span></div>';
+  document.getElementById('shippingFields').style.display = cart.some(i=>i.category==='art') ? 'block' : 'none';
+  document.getElementById('checkoutError').style.display = 'none';
+  document.getElementById('placeOrderBtn').disabled = false;
+  document.getElementById('placeOrderBtn').textContent = 'Doorgaan naar betalen (iDEAL) →';
+  cartOverlay.style.display='none';
+  checkoutOverlay.style.display='flex';
+};
+
+function showCheckoutError(msg){
+  const el = document.getElementById('checkoutError');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+document.getElementById('placeOrderBtn').onclick = async () => {
+  const name = document.getElementById('custName').value.trim();
+  const email = document.getElementById('custEmail').value.trim();
+  const needsAddress = lastOrderCart.some(i=>i.category==='art');
+  const address = document.getElementById('custAddress').value.trim();
+  const zip = document.getElementById('custZip').value.trim();
+  const city = document.getElementById('custCity').value.trim();
+
+  if(!name){ showCheckoutError('Vul je naam in.'); return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ showCheckoutError('Vul een geldig e-mailadres in.'); return; }
+  if(needsAddress && (!address || !zip || !city)){ showCheckoutError('Vul je verzendadres volledig in.'); return; }
+  if(lastOrderCart.length===0){ showCheckoutError('Je winkelwagen is leeg.'); return; }
+
+  const btn = document.getElementById('placeOrderBtn');
+  btn.disabled = true; btn.textContent = 'Even geduld…';
+  document.getElementById('checkoutError').style.display = 'none';
+
+  try {
+    const res = await fetch(SUPABASE_URL + '/functions/v1/create-payment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
+      body: JSON.stringify({
+        items: lastOrderCart.map(i => ({ slug:i.slug, name:i.name, category:i.category, qty:i.qty })),
+        customer: { name, email, address: needsAddress ? {address, zip, city} : null },
+      }),
+    });
+    const data = await res.json();
+    if(!res.ok || data.error || !data.checkoutUrl){
+      showCheckoutError(data.error || 'Er ging iets mis bij het starten van de betaling. Probeer het opnieuw.');
+      btn.disabled = false; btn.textContent = 'Doorgaan naar betalen (iDEAL) →';
+      return;
+    }
+    saveCart([]);
+    window.location.href = data.checkoutUrl; // door naar Mollie/iDEAL
+  } catch(e){
+    showCheckoutError('Kon geen verbinding maken met de betaalservice. Probeer het later opnieuw.');
+    btn.disabled = false; btn.textContent = 'Doorgaan naar betalen (iDEAL) →';
+  }
+};
+
+/* ---------- order status na terugkomst van Mollie ---------- */
+const orderStatusOverlay = document.getElementById('orderStatusOverlay');
+document.getElementById('orderStatusClose').onclick = () => orderStatusOverlay.style.display='none';
+
+async function fetchOrderStatus(orderId){
+  const res = await fetch(SUPABASE_URL + '/functions/v1/get-order-status?orderId=' + encodeURIComponent(orderId), {
+    headers: { 'apikey': SUPABASE_ANON_KEY, 'Authorization': 'Bearer ' + SUPABASE_ANON_KEY },
+  });
+  if(!res.ok) return null;
+  return res.json();
+}
+
+async function showOrderStatus(orderId){
+  const body = document.getElementById('orderStatusBody');
+  body.innerHTML = '<div class="cart-empty">Betaalstatus wordt opgehaald…</div>';
+  orderStatusOverlay.style.display = 'flex';
+
+  let data = null;
+  for(let attempt=0; attempt<8; attempt++){
+    data = await fetchOrderStatus(orderId);
+    if(data && data.status !== 'open') break;
+    await new Promise(r=>setTimeout(r, 2000));
+  }
+
+  if(!data){ body.innerHTML = '<div class="cart-empty">Bestelling niet gevonden.</div>'; return; }
+
+  if(data.status === 'paid'){
+    let html = '<div class="cta-note" style="margin-bottom:14px;">Bedankt voor je bestelling! ';
+    html += (data.items||[]).some(i=>i.category==='art') ? 'Je 3D-kunstobject wordt zo snel mogelijk verzonden.' : '';
+    html += '</div>';
+    const stlItems = (data.items||[]).filter(i=>i.category==='stl');
+    if(stlItems.length){
+      html += '<div class="admin-section-label">Je STL-downloads</div>';
+      body.innerHTML = html;
+      for(const item of stlItems){
+        const row = document.createElement('div'); row.className='cart-item';
+        row.innerHTML = '<div class="cart-item-name">'+item.name+'<small>STL-bestand</small></div>';
+        const dlBtn = document.createElement('button'); dlBtn.className='admin-btn'; dlBtn.textContent='Downloaden';
+        dlBtn.onclick = async () => { const blob = await idbGet(item.slug); if(blob) downloadBlob(blob, item.slug+'.stl'); };
+        row.appendChild(dlBtn);
+        body.appendChild(row);
+      }
+    } else {
+      body.innerHTML = html;
+    }
+  } else if(data.status === 'open'){
+    body.innerHTML = '<div class="cart-empty">We wachten nog op bevestiging van je betaling. Ververs deze pagina zo nodig over een paar minuten, of neem contact op als dit lang duurt.</div>';
+  } else {
+    body.innerHTML = '<div class="cart-empty">De betaling is niet gelukt (status: '+data.status+'). Je kunt het opnieuw proberen vanuit je winkelwagen.</div>';
+  }
+}
+
+(function checkForOrderReturn(){
+  const params = new URLSearchParams(window.location.search);
+  const orderId = params.get('order');
+  if(orderId) showOrderStatus(orderId);
+})();
+updateCartBadge();
+
+/* ---------- admin ---------- */
+/* Echte login via Supabase Auth i.p.v. een plaintext wachtwoord in de broncode.
+   Maak in het Supabase-dashboard (Authentication → Users) één beheerder-account aan
+   met e-mail + wachtwoord; alleen dat account kan hiermee inloggen. */
+const adminOverlay = document.getElementById('adminOverlay');
+document.getElementById('adminBtn').onclick = () => { adminOverlay.style.display='flex'; checkAdminState(); };
+document.getElementById('adminClose').onclick = () => adminOverlay.style.display='none';
+document.getElementById('adminLoginBtn').onclick = async () => {
+  const email = document.getElementById('adminEmail').value.trim();
+  const pass = document.getElementById('adminPass').value;
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  if(error){ alert('Inloggen mislukt: '+error.message); return; }
+  document.getElementById('adminPass').value='';
+  checkAdminState();
+};
+document.getElementById('adminLogout').onclick = async () => { await sb.auth.signOut(); checkAdminState(); };
+async function checkAdminState(){
+  const { data: { session } } = await sb.auth.getSession();
+  const isAdmin = !!session;
+  document.getElementById('adminLogin').style.display = isAdmin?'none':'block';
+  document.getElementById('adminManage').style.display = isAdmin?'block':'none';
+  if(isAdmin) renderAdminList();
+}
+let adminListToken = 0;
+async function renderAdminList(){
+  const myToken = ++adminListToken;
+  await productsReady;
+  const list = document.getElementById('adminList');
+  const frag = document.createDocumentFragment();
+  for(const lm of LANDMARKS){
+    const key = slugKey(lm);
+    const blob = await idbGet(key);
+    if(myToken !== adminListToken) return;
+    const row = document.createElement('div'); row.className = 'admin-row';
+    const nameEl = document.createElement('div'); nameEl.className='admin-row-name'; nameEl.textContent = lm.name;
+    const statusEl = document.createElement('div'); statusEl.className='admin-row-status'; statusEl.textContent = blob ? '✓ geüpload' : '— geen bestand';
+    const input = document.createElement('input'); input.type='file'; input.accept='.stl'; input.style.display='none';
+    const uploadBtn = document.createElement('button'); uploadBtn.className='admin-btn'; uploadBtn.textContent = blob ? 'Vervangen' : 'Uploaden';
+    uploadBtn.onclick = () => input.click();
+    input.onchange = async () => { if(input.files[0]){ await idbSet(key, input.files[0]); renderAdminList(); } };
+    row.append(nameEl, statusEl, input, uploadBtn);
+    if(blob){
+      const delBtn = document.createElement('button'); delBtn.className='admin-btn admin-btn-danger'; delBtn.textContent='Verwijderen';
+      delBtn.onclick = async () => { await idbDelete(key); renderAdminList(); };
+      row.appendChild(delBtn);
+    }
+    const editBtn = document.createElement('button'); editBtn.className='admin-btn'; editBtn.textContent = "Prijzen & foto's";
+    row.appendChild(editBtn);
+    const prod = getProduct(key);
+    const editForm = document.createElement('div'); editForm.className='admin-edit-form';
+    editForm.innerHTML =
+      '<div class="admin-field-row">' +
+        '<div><label>STL-prijs (€)</label><input type="number" step="0.01" class="f-stl-price" value="'+prod.stlPrice+'"></div>' +
+        '<div><label>3D Art-prijs (€)</label><input type="number" step="0.01" class="f-art-price" value="'+prod.artPrice+'"></div>' +
+      '</div>' +
+      '<div class="admin-section-label">Foto\'s (klik om te uploaden) \u2014 foto 1 wordt het kaart-icoon, verschijnt niet in de fotogalerij</div>' +
+      '<div class="admin-img-grid img-grid"></div>';
+    const imgGrid = editForm.querySelector('.img-grid');
+    prod.images.forEach((u,i)=> imgGrid.appendChild(buildImgSlot(u,i,'f-img',key)));
+    editForm.querySelector('.f-stl-price').onchange = (e) => setProduct(key, {stlPrice: parseFloat(e.target.value)||0});
+    editForm.querySelector('.f-art-price').onchange = (e) => setProduct(key, {artPrice: parseFloat(e.target.value)||0});
+    const saveBtn = document.createElement('button'); saveBtn.className='admin-btn'; saveBtn.style.marginTop='4px'; saveBtn.textContent='Opslaan';
+    saveBtn.onclick = () => {
+      const stlPrice = parseFloat(editForm.querySelector('.f-stl-price').value)||0;
+      const artPrice = parseFloat(editForm.querySelector('.f-art-price').value)||0;
+      const images = [...editForm.querySelectorAll('.f-img')].map(i=>i.value.trim());
+      setProduct(key, {stlPrice, artPrice, images});
+      saveBtn.textContent='Opgeslagen ✓'; setTimeout(()=>{ saveBtn.textContent='Opslaan'; },1200);
+    };
+    editForm.appendChild(saveBtn);
+    editBtn.onclick = () => editForm.classList.toggle('open');
+    const wrapDiv = document.createElement('div'); wrapDiv.className='admin-row-wrap';
+    wrapDiv.append(row, editForm);
+    frag.appendChild(wrapDiv);
+  }
+  if(myToken !== adminListToken) return;
+  list.replaceChildren(frag);
+}
+
+/* ---------- css-3d building engine ---------- */
+function shade(hue, chroma, light, mult){
+  const l = Math.min(97, Math.max(3, light*mult));
+  return `oklch(${l}% ${chroma*0.1} ${hue})`;
+}
+function faceEl(w,h,transform,bg){
+  const d = document.createElement('div');
+  d.style.position='absolute'; d.style.left='50%'; d.style.top='50%';
+  d.style.width=w+'px'; d.style.height=h+'px';
+  d.style.marginLeft=(-w/2)+'px'; d.style.marginTop=(-h/2)+'px';
+  d.style.transform=transform; d.style.background=bg;
+  d.style.backfaceVisibility='hidden'; d.style.border='1px solid rgba(40,25,10,.12)';
+  return d;
+}
+function rawBox(w,h,d,hue,chroma,light){
+  const g = document.createElement('div');
+  g.style.position='absolute'; g.style.transformStyle='preserve-3d';
+  g.appendChild(faceEl(w,h,`translateZ(${d/2}px)`, shade(hue,chroma,light,1)));
+  g.appendChild(faceEl(w,h,`translateZ(${-d/2}px) rotateY(180deg)`, shade(hue,chroma,light,.72)));
+  g.appendChild(faceEl(d,h,`translateX(${w/2}px) rotateY(90deg)`, shade(hue,chroma,light,.86)));
+  g.appendChild(faceEl(d,h,`translateX(${-w/2}px) rotateY(-90deg)`, shade(hue,chroma,light,.86)));
+  g.appendChild(faceEl(w,d,`translateY(${-h/2}px) rotateX(90deg)`, shade(hue,chroma,light,1.18)));
+  g.appendChild(faceEl(w,d,`translateY(${h/2}px) rotateX(-90deg)`, shade(hue,chroma,light,.55)));
+  return g;
+}
+function groundBox(w,h,d,x,z,hue,chroma,light,extraTransform){
+  const g = rawBox(w,h,d,hue,chroma,light);
+  g.style.transform = `translate3d(${x}px, ${-h/2}px, ${z}px) ${extraTransform||''}`;
+  return g;
+}
+function frustum(baseW,baseD,topW,topD,height,x,z,hue,chroma,light){
+  const g = document.createElement('div');
+  g.style.position='absolute'; g.style.transformStyle='preserve-3d';
+  g.style.transform = `translate3d(${x}px, ${-height/2}px, ${z}px)`;
+  const insetW = (baseW-topW)/2/baseW*100;
+  const insetD = (baseD-topD)/2/baseD*100;
+  const clipW = `polygon(${insetW}% 0%, ${100-insetW}% 0%, 100% 100%, 0% 100%)`;
+  const clipD = `polygon(${insetD}% 0%, ${100-insetD}% 0%, 100% 100%, 0% 100%)`;
+  const front = faceEl(baseW,height,`translateZ(${baseD/2}px)`, shade(hue,chroma,light,1)); front.style.clipPath=clipW; g.appendChild(front);
+  const back = faceEl(baseW,height,`translateZ(${-baseD/2}px) rotateY(180deg)`, shade(hue,chroma,light,.7)); back.style.clipPath=clipW; g.appendChild(back);
+  const right = faceEl(baseD,height,`translateX(${baseW/2}px) rotateY(90deg)`, shade(hue,chroma,light,.85)); right.style.clipPath=clipD; g.appendChild(right);
+  const left = faceEl(baseD,height,`translateX(${-baseW/2}px) rotateY(-90deg)`, shade(hue,chroma,light,.85)); left.style.clipPath=clipD; g.appendChild(left);
+  const top = faceEl(topW,topD,`translateY(${-height/2}px) rotateX(90deg)`, shade(hue,chroma,light,1.2)); g.appendChild(top);
+  return g;
+}
+function cylinderPrism(radius,height,segments,x,z,hue,chroma,light,cap){
+  const g = document.createElement('div');
+  g.style.position='absolute'; g.style.transformStyle='preserve-3d';
+  g.style.transform = `translate3d(${x}px, ${-height/2}px, ${z}px)`;
+  const faceW = 2*radius*Math.tan(Math.PI/segments)*1.02;
+  for(let i=0;i<segments;i++){
+    const angle = i*(360/segments);
+    const b = (Math.cos(angle*Math.PI/180)*.25)+.9;
+    g.appendChild(faceEl(faceW,height,`rotateY(${angle}deg) translateZ(${radius}px)`, shade(hue,chroma,light,b)));
+  }
+  if(cap){ g.appendChild(faceEl(radius*2,radius*2,`translateY(${-height/2}px) rotateX(90deg)`, shade(hue,chroma,light,1.25))); }
+  return g;
+}
+function triPediment(w,depth,h,x,z,hue,chroma,light){
+  const g = document.createElement('div');
+  g.style.position='absolute'; g.style.transformStyle='preserve-3d';
+  g.style.transform = `translate3d(${x}px, ${-h/2}px, ${z}px)`;
+  const front = faceEl(w,h,`translateZ(${depth/2}px)`, shade(hue,chroma,light,1)); front.style.clipPath='polygon(0% 100%,100% 100%,50% 0%)'; g.appendChild(front);
+  const back = faceEl(w,h,`translateZ(${-depth/2}px) rotateY(180deg)`, shade(hue,chroma,light,.7)); back.style.clipPath='polygon(0% 100%,100% 100%,50% 0%)'; g.appendChild(back);
+  const rl = faceEl(depth,h,`translateX(${w/2}px) rotateY(90deg)`, shade(hue,chroma,light,.8)); rl.style.clipPath='polygon(100% 100%,0% 100%,100% 0%)'; g.appendChild(rl);
+  const ll = faceEl(depth,h,`translateX(${-w/2}px) rotateY(-90deg)`, shade(hue,chroma,light,.8)); ll.style.clipPath='polygon(0% 100%,100% 100%,0% 0%)'; g.appendChild(ll);
+  return g;
+}
+let billboards = [];
+function sphere(radius,x,y,z,hue,chroma,light){
+  const el = document.createElement('div');
+  el.style.position='absolute'; el.style.width=el.style.height=(radius*2)+'px';
+  el.style.marginLeft=el.style.marginTop=(-radius)+'px';
+  el.style.left='50%'; el.style.top='50%'; el.style.borderRadius='50%';
+  el.style.background = `radial-gradient(circle at 32% 28%, ${shade(hue,chroma,light,1.35)}, ${shade(hue,chroma,light,.85)} 60%, ${shade(hue,chroma,light,.5)} 100%)`;
+  el.style.boxShadow = `inset -8px -8px 16px rgba(30,15,5,.25)`;
+  billboards.push({el,x,y,z});
+  return el;
+}
+function tube(p1,p2,thickness,hue,chroma,light){
+  const dx=p2.x-p1.x, dy=p2.y-p1.y, dz=p2.z-p1.z;
+  const len = Math.sqrt(dx*dx+dy*dy+dz*dz);
+  const horiz = Math.sqrt(dx*dx+dz*dz);
+  const yaw = Math.atan2(dx,dz)*180/Math.PI;
+  const pitch = Math.atan2(-dy,horiz)*180/Math.PI;
+  const g = rawBox(thickness,thickness,len,hue,chroma,light);
+  const midX=(p1.x+p2.x)/2, midY=(p1.y+p2.y)/2, midZ=(p1.z+p2.z)/2;
+  g.style.transform = `translate3d(${midX}px,${midY}px,${midZ}px) rotateY(${yaw}deg) rotateX(${pitch}deg)`;
+  return g;
+}
+
+/* ---------- building recipes ---------- */
+const BUILDERS = {
+  colosseum(rig){
+    rig.appendChild(cylinderPrism(95,72,18,0,0, 35,.09,58,true));
+    rig.appendChild(cylinderPrism(90,20,18,0,0, 35,.09,66));
+  },
+  pisa(rig){
+    const grp = document.createElement('div');
+    grp.style.position='absolute'; grp.style.transformStyle='preserve-3d';
+    grp.style.transform = 'rotateZ(7deg)';
+    grp.appendChild(cylinderPrism(28,150,14,0,0, 55,.05,80,false));
+    grp.appendChild(cylinderPrism(22,18,14,0,0, 55,.05,84,true));
+    rig.appendChild(grp);
+  },
+  eiffel(rig){
+    rig.appendChild(frustum(120,120,10,10,220,0,0, 30,.1,45));
+    rig.appendChild(groundBox(6,40,6,0,0, 30,.1,45,'translateY(-220px)'));
+  },
+  bigben(rig){
+    rig.appendChild(groundBox(55,170,55,0,0, 55,.04,75));
+    const belfry = groundBox(45,30,45,0,0, 55,.04,80);
+    belfry.style.transform = 'translate3d(0px,-185px,0px)';
+    rig.appendChild(belfry);
+    const clock = faceEl(30,30,'translate3d(0px,-200px,27.5px)', shade(45,.12,80,1));
+    clock.style.borderRadius='50%';
+    rig.appendChild(clock);
+    const spire = frustum(45,45,4,4,55,0,0, 55,.04,70);
+    spire.style.transform = 'translate3d(0px,-227px,0px)';
+    rig.appendChild(spire);
+  },
+  brandenburg(rig){
+    for(let i=-2;i<=2;i++){
+      rig.appendChild(cylinderPrism(9,90,10,i*38,0, 60,.03,82,false));
+    }
+    rig.appendChild(groundBox(200,22,50,0,0, 60,.03,78,'translateY(-90px)'));
+    rig.appendChild(triPediment(90,50,26,0,0, 60,.03,84,'translateY(-112px)'.length?'':''));
+  },
+  sagrada(rig){
+    rig.appendChild(groundBox(160,60,100,0,0, 20,.05,60));
+    const spires = [[-55,0,120],[-22,0,150],[15,0,175],[48,0,140],[70,0,110]];
+    spires.forEach(([x,z,h],i)=>{
+      const s = frustum(26,26,6,6,h,x,z, 20,.05,64+i*2);
+      s.style.transform += ' translateY(-60px)';
+      rig.appendChild(s);
+    });
+  },
+  atomium(rig){
+    const s=60;
+    const pts = [
+      {x:-s,y:-s,z:-s},{x:s,y:-s,z:-s},{x:s,y:-s,z:s},{x:-s,y:-s,z:s},
+      {x:-s,y:s,z:-s},{x:s,y:s,z:-s},{x:s,y:s,z:s},{x:-s,y:s,z:s},
+    ];
+    const center = {x:0,y:0,z:0};
+    pts.forEach(p=>rig.appendChild(tube(center,p,5, 210,.05,70)));
+    for(let i=0;i<4;i++){ rig.appendChild(tube(pts[i],pts[i+4],5, 210,.05,70)); }
+    for(let i=0;i<4;i++){ const a=pts[i], b=pts[(i+1)%4]; rig.appendChild(tube(a,b,5, 210,.05,70)); }
+    for(let i=4;i<8;i++){ const a=pts[i], b=pts[4+((i+1)%4)]; rig.appendChild(tube(a,b,5, 210,.05,70)); }
+    pts.forEach(p=>rig.appendChild(sphere(22,p.x,p.y,p.z, 40,.14,68)));
+    rig.appendChild(sphere(26,0,0,0, 40,.14,72));
+  },
+  parthenon(rig){
+    rig.appendChild(groundBox(220,110,26,0,0, 55,.02,78));
+    for(let i=0;i<8;i++){
+      const x = -95 + i*(190/7);
+      rig.appendChild(cylinderPrism(7,70,10,x,34, 55,.02,84,false));
+    }
+    rig.appendChild(groundBox(220,16,14,0,68, 55,.02,74,'translateY(-70px)'));
+    rig.appendChild(triPediment(230,110,30,0,0, 55,.02,80));
+  },
+};
+const MINI_SCALE = {colosseum:.32, pisa:.34, eiffel:.17, bigben:.19, brandenburg:.24, sagrada:.22, atomium:.26, parthenon:.22};
+function buildMini(container, modelKey){
+  billboards = [];
+  const stage = document.createElement('div');
+  stage.style.position='absolute'; stage.style.inset='0'; stage.style.perspective='400px';
+  const rig = document.createElement('div');
+  rig.style.position='absolute'; rig.style.left='50%'; rig.style.top='88%'; rig.style.transformStyle='preserve-3d';
+  const scale = MINI_SCALE[modelKey]||.22, rotX=-14, rotY=32;
+  BUILDERS[modelKey](rig);
+  billboards.forEach(b=>{ b.el.style.transform = `translate3d(${b.x}px,${b.y}px,${b.z}px) rotateY(${-rotY}deg) rotateX(${-rotX}deg)`; rig.appendChild(b.el); });
+  rig.style.transform = `scale(${scale}) rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+  stage.appendChild(rig);
+  container.appendChild(stage);
+}
+
+/* ---------- stage interaction ---------- */
+function initStage(wrap, builder){
+  const rig = wrap.querySelector('.rig');
+  rig.innerHTML='';
+  billboards = [];
+  builder(rig);
+  let rotX = -18, rotY = 28, autoSpin = true;
+  function apply(){
+    rig.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+    billboards.forEach(b=>{
+      b.el.style.transform = `translate3d(${b.x}px,${b.y}px,${b.z}px) rotateY(${-rotY}deg) rotateX(${-rotX}deg)`;
+    });
+  }
+  billboards.forEach(b=>rig.appendChild(b.el));
+  apply();
+  let dragging=false, lastX=0, lastY=0;
+  wrap.addEventListener('pointerdown', e=>{dragging=true; autoSpin=false; wrap.classList.add('dragging'); lastX=e.clientX; lastY=e.clientY;});
+  window.addEventListener('pointerup', ()=>{dragging=false; wrap.classList.remove('dragging');});
+  window.addEventListener('pointermove', e=>{
+    if(!dragging) return;
+    rotY += (e.clientX-lastX)*0.4;
+    rotX = Math.max(-70, Math.min(70, rotX - (e.clientY-lastY)*0.4));
+    lastX=e.clientX; lastY=e.clientY;
+    apply();
+  });
+  function loop(){
+    if(autoSpin){ rotY += 0.15; apply(); }
+    if(document.body.contains(wrap)) requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+map.on('zoomend', updateZoomClass);
+function updateZoomClass(){
+  map.getContainer().classList.toggle('zoomed-out', map.getZoom() < 6);
+}
+updateZoomClass();
+
+const ICONS = {
+  tower:'<path d="M10 4h4v16h-4z"/><path d="M12 1l3 4H9z"/>',
+  dome:'<path d="M6 20v-6h12v6z"/><path d="M6 14a6 6 0 0112 0z"/>',
+  arch:'<path d="M4 20V10a8 8 0 0116 0v10h-3v-9a5 5 0 00-10 0v9z"/>',
+  temple:'<polygon points="12,3 21,10 3,10"/><rect x="5" y="10" width="2" height="9"/><rect x="9" y="10" width="2" height="9"/><rect x="13" y="10" width="2" height="9"/><rect x="17" y="10" width="2" height="9"/><rect x="3" y="19" width="18" height="2"/>',
+  arena:'<ellipse cx="12" cy="12" rx="9" ry="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><rect x="2" y="17" width="20" height="2"/>',
+  castle:'<rect x="4" y="10" width="16" height="10"/><rect x="4" y="6" width="3" height="4"/><rect x="10.5" y="6" width="3" height="4"/><rect x="17" y="6" width="3" height="4"/>',
+  atomium:'<circle cx="7" cy="8" r="3"/><circle cx="17" cy="8" r="3"/><circle cx="12" cy="18" r="3"/>',
+  megalith:'<rect x="4" y="10" width="3" height="10"/><rect x="10.5" y="10" width="3" height="10"/><rect x="17" y="10" width="3" height="10"/><rect x="3" y="7" width="18" height="3"/>',
+  bridge:'<rect x="5" y="5" width="3" height="15"/><rect x="16" y="5" width="3" height="15"/><rect x="2" y="13" width="20" height="3"/>',
+};
+function iconSvg(type){ return `<svg viewBox="0 0 24 24" fill="currentColor">${ICONS[type]||ICONS.tower}</svg>`; }
+
+(async () => {
+  await productsReady; // wachten tot foto's/prijzen uit Supabase geladen zijn, anders staat de pin-foto er nooit op
+  LANDMARKS.forEach(lm => {
+    const slug = slugKey(lm);
+    const prod = getProduct(slug);
+    const photo = prod.images[0];
+    const html = photo
+      ? `<div class="pin"><div class="pin-photo" style="background-image:url(${photo})"></div><div class="pin-label">${lm.name}</div></div>`
+      : `<div class="pin"><div class="pin-badge">${iconSvg(lm.icon)}</div><div class="pin-label">${lm.name}</div></div>`;
+    const icon = L.divIcon({className:'', html, iconSize: photo?[80,96]:[70,70], iconAnchor: photo?[40,52]:[35,42]});
+    const marker = L.marker([lm.lat, lm.lng], {icon}).addTo(map);
+    marker.on('click', () => openPanel(lm));
+  });
+})();
+</script>
+</body>
+</html>
